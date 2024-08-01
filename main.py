@@ -1,38 +1,31 @@
-%%writefile main.py
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from flask import Flask, request, jsonify
 from groq import Groq
 import os
 
-app = FastAPI()
+app = Flask(__name__)
 
-# Get the Groq API key from environment variable
-groq_api_key = os.getenv("GROQ_API_KEY")
-if not groq_api_key:
-    raise ValueError("GROQ_API_KEY environment variable is not set")
+# Initialize Groq client
+groq_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
-client = Groq(api_key=groq_api_key)
-
-class AIRequest(BaseModel):
-    model: str
-    prompt: str
-
-@app.post("/ai")
-async def generate_ai_response(request: AIRequest):
+@app.route('/ai', methods=['POST'])
+def ai_endpoint():
+    data = request.json
+    model = data.get('model', 'mixtral-8x7b-32768')
+    prompt = data.get('prompt')
+    
+    if not prompt:
+        return jsonify({"error": "Prompt is required"}), 400
+    
     try:
-        response = client.chat.completions.create(
-            model=request.model,
-            messages=[
-                {
-                    "role": "user",
-                    "content": request.prompt,
-                }
-            ],
+        response = groq_client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=1000
         )
-        return {"response": response.choices[0].message.content}
+        return jsonify({"response": response.choices[0].message.content})
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return jsonify({"error": str(e)}), 500
 
-@app.get("/")
-async def root():
-    return {"message": "Groq API server is running"}
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
